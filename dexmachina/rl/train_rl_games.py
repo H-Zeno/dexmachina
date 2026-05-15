@@ -12,12 +12,13 @@ from datetime import datetime
 
 from rl_games.common import env_configurations, vecenv
 from rl_games.common.algo_observer import IsaacAlgoObserver
-from rl_games.torch_runner import Runner 
+from rl_games.torch_runner import Runner
 
 from dexmachina.asset_utils import get_rl_config_path
-from dexmachina.envs.base_env import BaseEnv 
+from dexmachina.envs.base_env import BaseEnv
 from dexmachina.envs.constructors import get_common_argparser, get_all_env_cfg, parse_clip_string
 from dexmachina.rl.rl_games_wrapper import RlGamesVecEnvWrapper, RlGamesGpuEnv
+from dexmachina.rl.wandb_video_observer import WandbVideoObserver
 
 
 def dump_yaml(filename: str, data: dict | object, sort_keys: bool = False):
@@ -164,8 +165,18 @@ def main():
     # also dump as pkl file 
     pickle.dump(env_kwargs, open(os.path.join(log_root_path, exp_name, "params", "env.pkl"), "wb")) 
 
-    # create runner from rl-games
-    runner = Runner(IsaacAlgoObserver())
+    # create runner from rl-games. If --record_video is on, use the wandb-video
+    # observer so periodic rollout mp4s sync to the active wandb run; otherwise
+    # fall back to the upstream Isaac observer (scalar logging only).
+    if args.record_video:
+        observer = WandbVideoObserver(
+            log_root=log_root_path,
+            exp_name=exp_name,
+            video_interval=max(int(args.record_interval), 1) if args.record_interval > 0 else 200,
+        )
+    else:
+        observer = IsaacAlgoObserver()
+    runner = Runner(observer)
     runner.load(agent_cfg)
 
     # set seed of the env
