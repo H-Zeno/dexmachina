@@ -24,7 +24,13 @@ _ORCA_ACTUATORS = {
     "finger": dict(
         joint_exprs=[r"joint_(abd|pip|iip|dip)_(thumb|index|middle|ring|pinky)"],
         kp=50.0,
-        kv=1.0,
+        # kv bumped from 1.0 to 3.0 to give a kp/kv ratio of ~17, well-damped and
+        # in line with upstream dexmachina hands (xhand 13.3, ability 13.3,
+        # allegro 15). With kv=1.0 the controller is severely underdamped and
+        # the finger PD overshoots its absolute-mode targets every step; the
+        # high-frequency oscillation is visible in PhysX (Isaac Lab) and only
+        # masked in Genesis by the SAP solver's numerical damping.
+        kv=3.0,
         force_range=4.0,
     ),
     "wrist_rot": dict(
