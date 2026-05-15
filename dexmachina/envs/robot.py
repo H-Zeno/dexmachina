@@ -411,29 +411,20 @@ class BaseRobot:
         if joint_idxs is None:
             joint_idxs = self.actuated_dof_idxs
         num_joints = len(joint_idxs)
-        batched_kp = torch.tensor(
-            [kp]*num_joints, dtype=torch.float32, device=self.device
-            ) 
-        batched_kv = torch.tensor(
-            [kv]*num_joints, dtype=torch.float32, device=self.device
-            ) 
-            
-        self.entity.set_dofs_kp(
-            batched_kp,
-            joint_idxs,
+        # batch_dofs_info=True (set scene-wide for the actuated object) requires
+        # per-env gain tensors of shape (num_envs, num_dofs).
+        batched_kp = torch.full(
+            (self.num_envs, num_joints), float(kp), dtype=torch.float32, device=self.device
         )
-        self.entity.set_dofs_kv(
-            batched_kv,
-            joint_idxs,
+        batched_kv = torch.full(
+            (self.num_envs, num_joints), float(kv), dtype=torch.float32, device=self.device
         )
-        fr = torch.tensor(
-            [fr]*num_joints, dtype=torch.float32, device=self.device
-            )
-        self.entity.set_dofs_force_range(
-            -1.0 * fr,
-            fr,
-            joint_idxs,
+        self.entity.set_dofs_kp(batched_kp, joint_idxs)
+        self.entity.set_dofs_kv(batched_kv, joint_idxs)
+        batched_fr = torch.full(
+            (self.num_envs, num_joints), float(fr), dtype=torch.float32, device=self.device
         )
+        self.entity.set_dofs_force_range(-batched_fr, batched_fr, joint_idxs)
 
     def set_inspire_gains(self):
         """ set the tuned values """
