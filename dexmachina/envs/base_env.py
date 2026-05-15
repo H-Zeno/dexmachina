@@ -101,17 +101,20 @@ def get_env_cfg(
         visualize_contact=False,
         enable_joint_limit=True, # enable joint limits for robots
         )
+    # Centered bimanual framing: both Inspire hands + box + cardboard support
+    # all visible, symmetric. 320x320 stays readable in the wandb video player.
+    # See apply_camera_poses(): Genesis 0.2.1 ignores the pos / lookat passed
+    # to scene.add_camera, so these values only stick because we re-apply them
+    # via cam.set_pose() at the first frame of every recording cycle.
     camera_kwargs = dict(
         front=dict(
-            res=(160, 160),
-            # pos=(0.5, -1.5, 1.2),
-            # lookat=(0.0, -0.15, 1.0),
-            pos=( 0, -1.6,  2.2),
-            lookat=(0.0, -0.1, 1.2),
-            fov=30,
+            res=(320, 320),
+            pos=(0.0, -1.3, 1.5),
+            lookat=(0.0, -0.05, 1.0),
+            fov=45,
         ),
         back=dict(
-            res=(160, 160),
+            res=(320, 320),
             pos=(0.4, 1.5, 1.8),
             lookat=(0.0, -0.15, 1.0),
             fov=25,
@@ -188,7 +191,7 @@ class BaseEnv:
         self.action_clip = env_cfg['action_clip']
         self.action_scale = env_cfg['action_scale']
         self.obs_clip = env_cfg['obs_clip']
-        self.dt = env_cfg['dt'] 
+        self.dt = env_cfg['dt']  
         self.early_reset_threshold = env_cfg['early_reset_threshold']
         self.early_reset_interval = int(env_cfg['early_reset_interval']) 
         self.early_reset_aux_thres = env_cfg.get('early_reset_aux_thres', dict())
@@ -357,10 +360,27 @@ class BaseEnv:
     def build_scene(self):
         env_cfg = self.env_cfg
         self.scene.build(
-            n_envs=self.num_envs, 
+            n_envs=self.num_envs,
             env_spacing=env_cfg.get('env_spacing', ENV_SPACING),
             n_envs_per_row=env_cfg.get('n_envs_per_row', None),
             )
+        self.apply_camera_poses()
+
+    def apply_camera_poses(self):
+        """Apply configured camera pose / lookat post-build. Genesis 0.2.1
+        ignores the pos / lookat passed to scene.add_camera, leaving every
+        camera at a default frame regardless of what was requested; calling
+        cam.set_pose after scene.build is the only path that actually moves
+        the camera. Without this, --record_video produces video from the
+        wrong viewpoint."""
+        if not getattr(self, "_camera_kwargs", None):
+            return
+        for name, cam in getattr(self, "cameras", {}).items():
+            kwargs = self._camera_kwargs.get(name, {})
+            pos = kwargs.get('pos')
+            lookat = kwargs.get('lookat')
+            if pos is not None or lookat is not None:
+                cam.set_pose(pos=pos, lookat=lookat)
 
     def post_scene_build_setup(self):
         """ call this separately to customize the scene after env.init()"""
@@ -582,8 +602,10 @@ class BaseEnv:
         for k, obj in self.objects.items():
             obj.step()
             
-        self.randomization.on_step(self.episode_length_buf)
+        self.randomization.on_step(self.episode_length_buf) # Applies random forces/torques to the object (when enabled)
         self.scene.step()  
+
+        # From here it is past the phyiscs step:
         self.episode_length_buf += 1
         # self.progress_episode_length() 
         self._compute_intermediate_values()
@@ -981,7 +1003,11 @@ class BaseEnv:
         return min_dists
         
     def _add_camera(self, camera_kwargs):
-        ''' Set camera position and direction, NOTE this must be done BEFORE scene.build()''' 
+        ''' Set camera position and direction, NOTE this must be done BEFORE scene.build()
+        Genesis 0.2.1 ignores scene.add_camera(pos=, lookat=) in this configuration;
+        we stash the requested poses and apply them via cam.set_pose(...) post-build
+        in apply_camera_poses().'''
+        self._camera_kwargs = camera_kwargs
         cameras = dict()
         for name, kwargs in camera_kwargs.items():
             cam_pos = kwargs.get('pos', (0.0, -1.5, 1.2))
@@ -1022,7 +1048,13 @@ class BaseEnv:
         if self.record_video:
             self._recording = True
 
-    def _render_headless(self): 
+    def _render_headless(self):
+        if self._recording and len(self._recorded_frames) == 0:
+            # Re-apply configured camera poses on the first frame of every
+            # recording cycle: env.reset() / post_scene_build_setup snaps the
+            # cameras back to Genesis' default pose, so a single post-build
+            # apply is not durable across the training loop.
+            self.apply_camera_poses()
         if self._recording and len(self._recorded_frames) < self.max_video_frames and self.record_video:
             # obj_pos = self.objects[self.object_names[0]].root_pos.cpu().numpy()[-1] 
             # import time
