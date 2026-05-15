@@ -1,6 +1,37 @@
-import torch 
-import genesis as gs 
+import torch
+import genesis as gs
 import seaborn as sns
+
+
+class _ContactTensorWrap:
+    """Mimics the old taichi-field `.to_torch(device=...)` interface."""
+
+    def __init__(self, tensor):
+        self._tensor = tensor
+
+    def to_torch(self, device='cuda:0'):
+        if isinstance(self._tensor, torch.Tensor):
+            return self._tensor.to(device)
+        return torch.as_tensor(self._tensor, device=device)
+
+
+class _ContactDataAdapter:
+    """Adapts post-merge Genesis `collider.get_contacts()` (dict with keys
+    link_a / link_b / geom_a / geom_b / penetration / position / normal / force
+    shaped (n_envs, max_contacts, ...)) to the pre-merge `collider.contact_data`
+    namespace with `.pos` rename and transposed (max_contacts, n_envs, ...) shape
+    that dexmachina's contact-filter code below depends on.
+    """
+
+    def __init__(self, info):
+        self._info = info
+
+    def __getattr__(self, name):
+        key = 'position' if name == 'pos' else name
+        tensor = self._info[key]
+        if hasattr(tensor, 'ndim') and tensor.ndim >= 2:
+            tensor = tensor.transpose(0, 1).contiguous()
+        return _ContactTensorWrap(tensor)
 
 def get_contact_marker_cfgs(
     num_vis_contacts=10,
@@ -176,9 +207,11 @@ def get_filtered_contacts(
     - contact_force_a_geom: (N, n_geom_a, n_geom_b, 3) -> aggregated contact force on geom_a (flip sign for geom_b)
     - contact_force_a_link: (N, n_link_a, n_link_b, 3) -> aggregated contact force on link_a (flip sign for link_b)
     """
-    contact_data = entity_a._solver.collider.contact_data # get all the data!
+    _collider = entity_a._solver.collider
+    _contacts_info = _collider.get_contacts(as_tensor=True, to_torch=True, keep_batch_dim=True)
+    contact_data = _ContactDataAdapter(_contacts_info)
     # NOTE need to use this to mask out invalid contacts!
-    n_contacts = entity_a._solver.collider.n_contacts.to_torch(device=device) # size [N] 
+    n_contacts = _collider._collider_state.n_contacts.to_torch(device=device) # size [N]
     # this returns a dict of key, tensor pairs: (can also do it separately: contact_data.geom_0.to_torch())
     # geom_a : torch.Size([500, N])
     # geom_b : torch.Size([500, N])
