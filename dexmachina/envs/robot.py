@@ -411,20 +411,21 @@ class BaseRobot:
         if joint_idxs is None:
             joint_idxs = self.actuated_dof_idxs
         num_joints = len(joint_idxs)
-        # batch_dofs_info=True (set scene-wide for the actuated object) requires
-        # per-env gain tensors of shape (num_envs, num_dofs).
-        batched_kp = torch.full(
-            (self.num_envs, num_joints), float(kp), dtype=torch.float32, device=self.device
+        # Genesis' set_dofs_* expects shape (num_envs, num_dofs) when scene-wide
+        # batch_dofs_info=True (training path with the actuated object), and
+        # shape (num_dofs,) otherwise (the retargeting path). Pick the right
+        # shape from the solver options instead of always batching.
+        batch_dofs_info = bool(
+            getattr(getattr(self.entity, "_solver", None), "_options", None)
+            and getattr(self.entity._solver._options, "batch_dofs_info", False)
         )
-        batched_kv = torch.full(
-            (self.num_envs, num_joints), float(kv), dtype=torch.float32, device=self.device
-        )
-        self.entity.set_dofs_kp(batched_kp, joint_idxs)
-        self.entity.set_dofs_kv(batched_kv, joint_idxs)
-        batched_fr = torch.full(
-            (self.num_envs, num_joints), float(fr), dtype=torch.float32, device=self.device
-        )
-        self.entity.set_dofs_force_range(-batched_fr, batched_fr, joint_idxs)
+        shape = (self.num_envs, num_joints) if batch_dofs_info else (num_joints,)
+        kp_t = torch.full(shape, float(kp), dtype=torch.float32, device=self.device)
+        kv_t = torch.full(shape, float(kv), dtype=torch.float32, device=self.device)
+        fr_t = torch.full(shape, float(fr), dtype=torch.float32, device=self.device)
+        self.entity.set_dofs_kp(kp_t, joint_idxs)
+        self.entity.set_dofs_kv(kv_t, joint_idxs)
+        self.entity.set_dofs_force_range(-fr_t, fr_t, joint_idxs)
 
     def set_inspire_gains(self):
         """ set the tuned values """
