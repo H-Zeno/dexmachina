@@ -66,35 +66,67 @@ def _rename_sides(xml: str) -> str:
 
 
 def _rewrite_axes(xml: str) -> str:
-    """Joint axes ``<axis xyz="x y z"/>`` — negate all three components.
+    """Joint axes for the YZ-plane mirror — *revolute joints only*.
 
-    Empirically validated against real2sim2target's geort-bundle left/right
-    pair: every finger joint axis flips sign on every component (e.g. right
-    abd_thumb (0, 0, -1) -> left (0, 0, +1); right pip_thumb (0, 0.342, 0.94)
-    -> left (0, -0.342, -0.94)). This is equivalent to "flip the sign of
-    every joint angle when commanded", which is what you want for a true
-    bilateral mirror — commanding +theta on left produces the mirror motion
-    of commanding +theta on right.
+    The geometric YZ-plane reflection rules are:
+    - **Revolute** axes are pseudovectors: ``(a, b, c) -> (a, -b, -c)``
+      (x preserved, y and z negated).
+    - **Prismatic** axes are polar vectors: ``(a, b, c) -> (-a, b, c)``
+      (only x flips).
+
+    We deliberately leave **prismatic axes UNCHANGED**. Reason: upstream's
+    ``retarget_utils.retarget_one_hand`` (lines 119-124) substitutes the
+    raw MANO wrist position into the prismatic qpos values directly via
+    ``val += wrist_pos[0/1/2]``, assuming `tx/ty/tz` axes point along
+    world `+x/+y/+z`. Flipping the LEFT prismatic ``tx`` axis to
+    ``(-1, 0, 0)`` would invert this short-circuit and place the LEFT
+    palm at world ``-x`` (colocated with the RIGHT hand). The "mirror"
+    character of LEFT vs RIGHT is therefore carried entirely by mirrored
+    joint origins + flipped revolute axes; the prismatic floating-base
+    DOFs stay in world frame on both sides.
+
+    Parsed via lxml because regex can't reliably scope an ``<axis>`` tag
+    to its surrounding ``<joint type="...">`` element.
     """
 
-    axis_re = re.compile(
-        r'(<axis\s+xyz=")(-?\d+(?:\.\d+(?:[eE]-?\d+)?)?)(\s+)'
-        r'(-?\d+(?:\.\d+(?:[eE]-?\d+)?)?)(\s+)'
-        r'(-?\d+(?:\.\d+(?:[eE]-?\d+)?)?)("\s*/?>)'
-    )
+    from lxml import etree as _et
 
-    def _neg(s: str) -> str:
-        v = -float(s) if float(s) != 0.0 else 0.0
-        return f"{v:.18g}"
+    parser = _et.XMLParser(remove_comments=True)
+    root = _et.fromstring(xml.encode("utf-8"), parser=parser)
 
-    def _sub(m: re.Match) -> str:
-        return (
-            f"{m.group(1)}{_neg(m.group(2))}{m.group(3)}"
-            f"{_neg(m.group(4))}{m.group(5)}"
-            f"{_neg(m.group(6))}{m.group(7)}"
-        )
+    def _fmt(v: float) -> str:
+        return "0" if v == 0.0 else f"{v:.18g}"
 
-    return axis_re.sub(_sub, xml)
+    for joint in root.findall(".//joint"):
+        if joint.get("type", "") != "revolute":
+            continue
+        axis = joint.find("axis")
+        if axis is None:
+            continue
+        comps = [float(x) for x in axis.get("xyz", "").split()]
+        if len(comps) != 3:
+            continue
+        a, b, c = comps
+        a_new = a
+        b_new = -b if b != 0.0 else 0.0
+        c_new = -c if c != 0.0 else 0.0
+        axis.set("xyz", f"{_fmt(a_new)} {_fmt(b_new)} {_fmt(c_new)}")
+
+    return _et.tostring(root, pretty_print=False).decode("utf-8")
+
+
+# NOTE: joint limits are intentionally NOT rewritten.
+#
+# Reasoning: under the YZ-plane axis flip ``(a, b, c) -> (a, -b, -c)``, the
+# parent frame and the joint axis BOTH transform consistently. Empirically
+# (and by working out the right-hand rule on a representative joint), the net
+# effect is that ``+qpos`` on the mirrored hand produces the world-frame
+# *mirror* of the rotation that ``+qpos`` produces on the original hand.
+# Since the original ``+qpos`` = flexion, the mirror is also flexion (just
+# on the mirrored side of the body). So the convention "positive qpos =
+# flexion" is preserved on both hands, and the original limit range applies
+# unchanged. Swapping/negating limits asymmetrically clips flexion on the
+# mirrored hand.
 
 
 def _rewrite_mesh_refs(xml: str, mesh_subdir_rel: str) -> str:
@@ -126,13 +158,7 @@ def main() -> None:
     xml = right_urdf.read_text()
 
     xml = _flip_origin(xml)
-    # NB: we deliberately do NOT negate joint axes. The retargeting optimiser
-    # only cares about fingertip-vector distance in world frame; with mirrored
-    # joint origins it finds the right qpos solution regardless of which sign
-    # represents "flexion". Negating axes additionally would flip the meaning
-    # of the joint-limit range (lower / upper become swapped relative to
-    # commanded angles) and confuses dex_retargeting's SLSQP bound handling.
-    # xml = _rewrite_axes(xml)
+    xml = _rewrite_axes(xml)
     xml = _rename_sides(xml)
     xml = _rewrite_mesh_refs(xml, mesh_subdir_rel="left_meshes")
 

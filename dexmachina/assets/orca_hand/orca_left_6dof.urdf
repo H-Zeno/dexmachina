@@ -1,18 +1,3 @@
-<?xml version="1.0" encoding='utf-8'?>
-<!--
-  GENERATED FILE — do not edit by hand.
-
-  Source: faive_system @ ee65e91351a7a02caf8b077fe31bc2e641bc57bd
-          src/viz/models/orcahand_v1b/orcahand_v1b.urdf.xacro
-  Generator: scripts/_generate_orcahand_v1b_right_6dof_urdf.py
-
-  22-DoF abstract right-hand URDF. The upstream prefix chain
-  (hand_root → tower → joint_palm → palm) is replaced by a 6-DoF
-  floating wrist (3 prismatic + 3 revolute, identical naming +
-  limits to v1's orcahand_right_6dof.urdf), terminating in a fixed
-  L_forearm_wrist_offset into left_palm. The 16 finger joints + the
-  v1b finger chain are byte-identical to the 17-DoF sibling.
--->
 <robot name="orcahand_v1b_right_6dof">
 <link name="L_forearm_tx_link"><inertial><origin xyz="0 0 0" rpy="0 0 0"/><mass value="0.001"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial></link>
 <joint name="L_forearm_tx_link_joint" type="prismatic">
@@ -39,7 +24,7 @@
 <joint name="L_forearm_roll_link_joint" type="revolute">
    <parent link="L_forearm_roll_link"/>
    <child link="L_forearm_pitch_link"/>
-   <axis xyz="0 0 1"/>
+   <axis xyz="0 0 -1"/>
    <limit lower="-6.283185307179586" upper="6.283185307179586" effort="100" velocity="5"/>
 </joint>
 <link name="L_forearm_pitch_link"><inertial><origin xyz="0 0 0" rpy="0 0 0"/><mass value="0.001"/><inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/></inertial></link>
@@ -53,7 +38,7 @@
 <joint name="L_forearm_yaw_link_joint" type="revolute">
    <parent link="L_forearm_yaw_link"/>
    <child link="L_forearm_wrist_offset_link"/>
-   <axis xyz="0 -1 0"/>
+   <axis xyz="0 1 0"/>
    <limit lower="-6.283185307179586" upper="6.283185307179586" effort="100" velocity="5"/>
 </joint>
 <link name="L_forearm_wrist_offset_link"><inertial><origin xyz="0 0 0" rpy="0 0 0"/><mass value="0.001"/><inertia ixx="1e-09" iyy="1e-09" izz="1e-09" ixy="0" ixz="0" iyz="0"/></inertial></link>
@@ -113,7 +98,7 @@
       <parent link="left_palm"/>
       <child link="left_joint_abd_thumb_jointbody"/>
       <origin xyz="0.0282090382389659777 0.01777053753934476 -0.013209503444777428" rpy="0.5385748168211226 0.0559492369386480615 1.27046590077027077"/>
-      <axis xyz="0.0 0.0 -1.0"/>
+      <axis xyz="0 0 1"/>
       <limit lower="-0.6108652381980153" upper="1.1344640137963142" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_abd_thumb_offset">
@@ -152,7 +137,7 @@
       <parent link="left_thumb_mp"/>
       <child link="left_joint_pip_thumb_jointbody"/>
       <origin xyz="4.51028103753969845e-17 1.5563939026463913e-16 4.687222832089333e-17" rpy="-1.221730476396032 4.44089209850062616e-16 9.99200722162640886e-16"/>
-      <axis xyz="0.0 0.34222508701641263 0.9396180020713785"/>
+      <axis xyz="0 -0.342225087016412632 -0.939618002071378466"/>
       <limit lower="-0.3490658503988659" upper="0.7330382858376184" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_pip_thumb_offset">
@@ -191,7 +176,7 @@
       <parent link="left_thumb_pp"/>
       <child link="left_joint_iip_thumb_jointbody"/>
       <origin xyz="2.53646998967792454e-16 5.2599154258198517e-17 -1.0558595790610728e-17" rpy="3.1415926535897927 -1.57079632679489478 0"/>
-      <axis xyz="0.0 -1.0 0.0"/>
+      <axis xyz="0 1 0"/>
       <limit lower="-0.3490658503988659" upper="2.0943951023931953" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_iip_thumb_offset">
@@ -230,7 +215,7 @@
       <parent link="left_thumb_ip"/>
       <child link="left_joint_dip_thumb_jointbody"/>
       <origin xyz="-0.00049999999997200938 -6.765421556309548e-16 0.03299999999999984" rpy="2.4424906541753483e-15 -2.22044604925031308e-15 -1.49880108324396527e-15"/>
-      <axis xyz="0.0 -1.0 0.0"/>
+      <axis xyz="0 1 0"/>
       <limit lower="-0.3490658503988659" upper="2.6179938779914944" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_dip_thumb_offset">
@@ -281,7 +266,7 @@
       <parent link="left_palm"/>
       <child link="left_joint_abd_index_jointbody"/>
       <origin xyz="0.0240917849300279555 0.0019042822195537508 0.025160679302659018" rpy="1.6066965884733262 -1.13552160053496687 0.0533920576075106457"/>
-      <axis xyz="8.326672684688674e-17 1.1102230246251565e-16 -1.0"/>
+      <axis xyz="8.32667268468867405e-17 -1.11022302462515654e-16 1"/>
       <limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_abd_index_offset">
@@ -320,7 +305,7 @@
       <parent link="left_index_mp"/>
       <child link="left_joint_pip_index_jointbody"/>
       <origin xyz="-9.07200474706765258e-17 -2.0636548322369215e-18 9.00862880334811e-18" rpy="7.850462293418878e-17 1.57079632679489634 0"/>
-      <axis xyz="2.7755575615628914e-16 -1.0000000000000013 3.3306690738754696e-16"/>
+      <axis xyz="2.77555756156289135e-16 1.00000000000000133 -3.33066907387546962e-16"/>
       <limit lower="-0.3490658503988659" upper="1.9198621771937625" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_pip_index_offset">
@@ -359,7 +344,7 @@
       <parent link="left_index_pp"/>
       <child link="left_joint_iip_index_jointbody"/>
       <origin xyz="-0.000499999999983969756 5.698990924330967e-17 0.03799999999999997" rpy="0.0 0 1.11022302462515654e-16"/>
-      <axis xyz="1.1102230246251565e-16 -0.9999999999999994 3.191891195797325e-16"/>
+      <axis xyz="1.11022302462515654e-16 0.999999999999999445 -3.19189119579732505e-16"/>
       <limit lower="-0.3490658503988659" upper="2.2689280275926285" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_iip_index_offset">
@@ -410,7 +395,7 @@
       <parent link="left_palm"/>
       <child link="left_joint_abd_middle_jointbody"/>
       <origin xyz="3.17839908306317727e-17 1.2056328158038776e-17 0.02999999999999983" rpy="1.570796326794897 -1.57079632679489611 0"/>
-      <axis xyz="4.440892098500626e-16 -4.440892098500626e-16 -0.9999999999999987"/>
+      <axis xyz="4.44089209850062616e-16 4.44089209850062616e-16 0.999999999999998668"/>
       <limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_abd_middle_offset">
@@ -449,7 +434,7 @@
       <parent link="left_middle_mp"/>
       <child link="left_joint_pip_middle_jointbody"/>
       <origin xyz="4.26075523319297258e-34 5.7777898331617076e-34 1.301042606982604e-18" rpy="0.0 1.57079632679489634 0"/>
-      <axis xyz="6.106226635438361e-16 -0.9999999999999997 -1.035742568734697e-16"/>
+      <axis xyz="6.10622663543836097e-16 0.999999999999999667 1.03574256873469706e-16"/>
       <limit lower="-0.3490658503988659" upper="1.9198621771937625" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_pip_middle_offset">
@@ -488,7 +473,7 @@
       <parent link="left_middle_pp"/>
       <child link="left_joint_iip_middle_jointbody"/>
       <origin xyz="-0.000499999999972738506 -8.944667923005355e-18 0.04600000000000013" rpy="0.0 0 0"/>
-      <axis xyz="6.106226635438361e-16 -0.9999999999999997 -1.035742568734697e-16"/>
+      <axis xyz="6.10622663543836097e-16 0.999999999999999667 1.03574256873469706e-16"/>
       <limit lower="-0.3490658503988659" upper="2.2689280275926285" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_iip_middle_offset">
@@ -539,7 +524,7 @@
       <parent link="left_palm"/>
       <child link="left_joint_abd_ring_jointbody"/>
       <origin xyz="-0.0215162624432517595 0.0015399660708893441 0.020821937215657737" rpy="-1.5359724334240132 -1.30836087957012381 3.05441180700114767"/>
-      <axis xyz="5.828670879282072e-16 -2.220446049250313e-16 -0.9999999999999996"/>
+      <axis xyz="5.82867087928207184e-16 2.22044604925031308e-16 0.999999999999999556"/>
       <limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_abd_ring_offset">
@@ -578,7 +563,7 @@
       <parent link="left_ring_mp"/>
       <child link="left_joint_pip_ring_jointbody"/>
       <origin xyz="2.73929116549420102e-16 5.658164857459344e-17 -8.813617833534736e-18" rpy="0.0 1.57079632679489634 0"/>
-      <axis xyz="-3.3306690738754696e-16 -1.0000000000000007 8.743006318923108e-16"/>
+      <axis xyz="-3.33066907387546962e-16 1.00000000000000067 -8.74300631892310776e-16"/>
       <limit lower="-0.3490658503988659" upper="1.9198621771937625" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_pip_ring_offset">
@@ -617,7 +602,7 @@
       <parent link="left_ring_pp"/>
       <child link="left_joint_iip_ring_jointbody"/>
       <origin xyz="-0.000499999999972730157 2.646654142703322e-17 0.045999999999999916" rpy="-6.938893903907228e-17 0 1.11022302462515654e-16"/>
-      <axis xyz="-2.220446049250313e-16 -1.0000000000000004 9.298117831235686e-16"/>
+      <axis xyz="-2.22044604925031308e-16 1.00000000000000044 -9.29811783123568603e-16"/>
       <limit lower="-0.3490658503988659" upper="2.2689280275926285" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_iip_ring_offset">
@@ -668,7 +653,7 @@
       <parent link="left_palm"/>
       <child link="left_joint_abd_pinky_jointbody"/>
       <origin xyz="-0.0425876828279297959 0.004991925321003609 0.007247738795820422" rpy="-1.4969430651841686 -0.861485370081063184 2.88373009659710755"/>
-      <axis xyz="-4.996003610813204e-16 -2.7755575615628914e-16 -0.9999999999999987"/>
+      <axis xyz="-4.99600361081320443e-16 2.77555756156289135e-16 0.999999999999998668"/>
       <limit lower="-0.5235987755982988" upper="0.5235987755982988" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_abd_pinky_offset">
@@ -707,7 +692,7 @@
       <parent link="left_pinky_mp"/>
       <child link="left_joint_pip_pinky_jointbody"/>
       <origin xyz="-9.85957006090367584e-17 -2.9392458236684397e-17 4.429782895373408e-18" rpy="3.1401849173675513e-16 1.57079632679489611 0"/>
-      <axis xyz="1.6653345369377348e-16 -0.9999999999999994 -1.1102230246251565e-16"/>
+      <axis xyz="1.66533453693773481e-16 0.999999999999999445 1.11022302462515654e-16"/>
       <limit lower="-0.3490658503988659" upper="1.9198621771937625" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_pip_pinky_offset">
@@ -746,7 +731,7 @@
       <parent link="left_pinky_pp"/>
       <child link="left_joint_iip_pinky_jointbody"/>
       <origin xyz="-0.000499999999984479439 -4.138564265705415e-18 0.03300000000000015" rpy="-1.665334536937734e-16 6.66133814775093924e-16 -1.11022302462515629e-16"/>
-      <axis xyz="3.885780586188048e-16 -0.9999999999999989 4.718447854656915e-16"/>
+      <axis xyz="3.88578058618804789e-16 0.99999999999999889 -4.7184478546569153e-16"/>
       <limit lower="-0.3490658503988659" upper="2.2689280275926285" effort="100" velocity="100"/>
    </joint>
    <joint type="fixed" name="joint_iip_pinky_offset">
