@@ -584,7 +584,6 @@ class RewardModule:
             bc_rew = self.bc_rew_weight * bc_rew_raw
             rew_dict["bc_dist"] = bc_dist.mean(dim=-1)
             rew_dict["bc_rew"] = bc_rew
-            rew_dict["bc_rew_raw"] = bc_rew_raw
             # rew += bc_rew
 
         if self.use_imi_rew: 
@@ -662,26 +661,56 @@ class RewardModule:
             action_penalty = action_norm_sq * self.cfg["action_penalty"]
             rew -= action_penalty
             rew_dict["action_penalty"] = action_penalty
-            rew_dict["action_norm_sq"] = action_norm_sq
 
-        # Roll-up scalars for the wandb breakdown: the final total reward seen
-        # by the policy, plus each shaped component as a separate scalar so the
-        # dashboard can stack them and show what's actually driving updates.
-        # The pre-weight ("raw") versions are exposed above per-component.
-        rew_dict["total_rew"] = rew.detach().clone()
-        breakdown_pairs = (
-            ("task_rew", rew_dict.get("task_rew")),
-            ("imi_rew", rew_dict.get("imi_rew") if self.use_imi_rew else None),
-            ("con_rew", rew_dict.get("con_rew") if self.contact_rew_weight > 0.0 else None),
-            ("bc_rew", rew_dict.get("bc_rew") if self.bc_rew_weight > 0.0 else None),
-            ("action_penalty", rew_dict.get("action_penalty") if self.cfg["action_penalty"] > 0.0 else None),
-            ("force_penalty", rew_dict.get("force_penalty")),
-        )
-        for name, value in breakdown_pairs:
-            if value is None:
-                continue
-            sign = -1.0 if name.endswith("penalty") else 1.0
-            rew_dict[f"contribution/{name}"] = sign * value.detach()
+        # Wandb dashboard grouping. Two namespaces:
+        #   rewards/*           — raw per-component signals (~[0,1] scale,
+        #                         exp(-β·distance) form). Comparable across
+        #                         components to answer "which signal is the
+        #                         bottleneck?".
+        #   weighted_rewards/*  — shaped values on the policy-loss scale
+        #                         (each component multiplied by its weight,
+        #                         penalties already negated). Comparable to
+        #                         each other to answer "which component is
+        #                         actually driving the gradient?".
+        # The flat keys above (imi_rew, con_rew, bc_rew, task_rew,
+        # action_penalty, etc.) remain unchanged for curriculum.py consumers.
+
+        # Raw task reward: the [0,1]-scale product/sum before task_rew_weight.
+        if "obj_pos_rew" in rew_dict and "obj_rot_rew" in rew_dict and "obj_arti_rew" in rew_dict:
+            if self.multiply_task_rew:
+                task_rew_raw = rew_dict["obj_pos_rew"] * rew_dict["obj_rot_rew"] * rew_dict["obj_arti_rew"]
+            else:
+                task_rew_raw = (
+                    self.obj_pos_weight * rew_dict["obj_pos_rew"]
+                    + self.obj_rot_weight * rew_dict["obj_rot_rew"]
+                    + self.obj_arti_weight * rew_dict["obj_arti_rew"]
+                )
+            rew_dict["rewards/task"] = task_rew_raw.detach()
+            rew_dict["weighted_rewards/task"] = rew_dict["task_rew"].detach()
+
+        if "imi_rew_raw" in rew_dict:
+            rew_dict["rewards/imi"] = rew_dict["imi_rew_raw"].detach()
+            rew_dict["weighted_rewards/imi"] = rew_dict["imi_rew"].detach()
+
+        if "con_rew_raw" in rew_dict:
+            rew_dict["rewards/contact"] = rew_dict["con_rew_raw"].detach()
+            rew_dict["weighted_rewards/contact"] = rew_dict["con_rew"].detach()
+
+        if self.bc_rew_weight > 0.0:
+            rew_dict["rewards/bc"] = bc_rew_raw.detach()
+            rew_dict["weighted_rewards/bc"] = bc_rew.detach()
+
+        if self.cfg["action_penalty"] > 0.0:
+            # action_norm_sq is the diagnostic signal; weighted_rewards stores
+            # the SIGNED contribution (negative, because it's a penalty) so a
+            # stack plot in wandb sums to total_rew.
+            rew_dict["rewards/action_norm_sq"] = action_norm_sq.detach()
+            rew_dict["weighted_rewards/action_penalty"] = -action_penalty.detach()
+
+        if "force_penalty" in rew_dict:
+            rew_dict["weighted_rewards/force_penalty"] = -rew_dict["force_penalty"].detach()
+
+        rew_dict["weighted_rewards/total"] = rew.detach()
         return rew, rew_dict
  
     def get_reward_keys(self):
