@@ -26,6 +26,13 @@ import wandb
 from rl_games.common.algo_observer import IsaacAlgoObserver
 
 
+# Namespaces that should appear as top-level wandb panel groups instead of
+# being buried under "Episode/". Any extras["log"] key with one of these
+# prefixes is moved out of the Episode/ namespace; everything else keeps the
+# default IsaacAlgoObserver Episode/<key> wrapping.
+_TOP_LEVEL_NAMESPACES = ("rewards/", "weighted_rewards/")
+
+
 class WandbVideoObserver(IsaacAlgoObserver):
     def __init__(self, log_root, exp_name, video_interval=200):
         super().__init__()
@@ -35,6 +42,29 @@ class WandbVideoObserver(IsaacAlgoObserver):
         self._video_interval = int(video_interval)
         self._base_env = None
         self._last_recorded_epoch = -1
+
+    def wandb_after_print_stats(self, frame, epoch_num, total_time):
+        """Strip the ``Episode/`` prefix from keys in our reward-breakdown
+        namespaces (``rewards/`` and ``weighted_rewards/``) so they appear
+        as top-level panel groups in wandb instead of being nested under
+        ``Episode/``. Other ``Episode/<key>`` scalars are untouched.
+
+        The parent ``IsaacAlgoObserver.wandb_after_print_stats`` builds the
+        ``tolog`` dict that ``a2c_common`` then merges into the trainer's
+        wandb payload (see ``rl_games/common/a2c_common.py:405``).
+        """
+        tolog = super().wandb_after_print_stats(frame, epoch_num, total_time)
+        if not tolog:
+            return tolog
+        remapped = {}
+        for key, value in tolog.items():
+            new_key = key
+            if key.startswith("Episode/"):
+                suffix = key[len("Episode/"):]
+                if any(suffix.startswith(p) for p in _TOP_LEVEL_NAMESPACES):
+                    new_key = suffix
+            remapped[new_key] = value
+        return remapped
 
     def after_init(self, algo):
         super().after_init(algo)
