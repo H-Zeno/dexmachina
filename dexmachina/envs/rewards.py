@@ -249,13 +249,18 @@ class RewardModule:
         else:
             imi_rew = fingertip_rew
             keypoint_dist = fingertip_dist
-            
+
+        # Capture the pre-weight (raw) imitation reward before the imi_rew_weight
+        # multiply so wandb can show both the signal magnitude and what the
+        # policy actually sees. Cloned to decouple from in-place ops below.
+        imi_rew_raw = imi_rew.detach().clone()
         imi_rew *= self.imi_rew_weight
 
         rew_dict = dict(
             kpts_dist_left=fingertip_dist_left,
-            kpts_dist_right=fingertip_dist_right,  
-            imi_rew=imi_rew, 
+            kpts_dist_right=fingertip_dist_right,
+            imi_rew=imi_rew,
+            imi_rew_raw=imi_rew_raw,
             keypoint_dist=keypoint_dist,
         )
         if self.imi_wrist_weight > 0.0:
@@ -466,7 +471,9 @@ class RewardModule:
                 rews[f"matched_condist_{side}_{part}"] = con_dist
                 contact_rew += con_rew
         contact_rew /= 4.0
-        contact_rew *= self.contact_rew_weight
+        # Capture pre-weight (raw) contact reward for wandb breakdown.
+        rews['con_rew_raw'] = contact_rew.detach().clone()
+        contact_rew = contact_rew * self.contact_rew_weight
         rews['con_rew'] = contact_rew
         return contact_rew, rews
 
@@ -493,15 +500,17 @@ class RewardModule:
             contacts_link_right, contacts_link_valid_right, 
             wrist_pose_right, obj_pose, episode_length_buf, demo_obj_pose, side='right'
         )
-        contact_rew = (contact_rew_left + contact_rew_right) / 2.0 
-     
+        contact_rew = (contact_rew_left + contact_rew_right) / 2.0
+
         # add bonus to reward more contact points
         # num_points = torch.sum(contacts_link_valid_left, dim=-1) + torch.sum(contacts_link_valid_right, dim=-1)
         # more_points_rew = torch.mean(num_points.float() / 2.0, dim=-1) # average over num_links, then over batch # max is 1.0
-        # contact_rew += more_points_rew * 0.01 
-        
-        contact_rew *= self.contact_rew_weight
+        # contact_rew += more_points_rew * 0.01
+
         contact_dict = {**contact_dict_left, **contact_dict_right} # merge the two dicts, should have no key overlap
+        # Capture pre-weight (raw) contact reward for wandb breakdown.
+        contact_dict['con_rew_raw'] = contact_rew.detach().clone()
+        contact_rew = contact_rew * self.contact_rew_weight
         contact_dict['con_rew'] = contact_rew
         return contact_rew, contact_dict
 
@@ -571,10 +580,11 @@ class RewardModule:
             episode_length_buf
         )
         if self.bc_rew_weight > 0.0:
-            bc_rew = self.bc_rew_weight * torch.exp(-self.cfg["bc_beta"] * bc_dist)
-            bc_rew = torch.mean(bc_rew, dim=-1)
+            bc_rew_raw = torch.mean(torch.exp(-self.cfg["bc_beta"] * bc_dist), dim=-1)
+            bc_rew = self.bc_rew_weight * bc_rew_raw
             rew_dict["bc_dist"] = bc_dist.mean(dim=-1)
             rew_dict["bc_rew"] = bc_rew
+            rew_dict["bc_rew_raw"] = bc_rew_raw
             # rew += bc_rew
 
         if self.use_imi_rew: 
@@ -648,9 +658,30 @@ class RewardModule:
         # rew *= 0.02 
         # penalize action to stay close to 0 
         if self.cfg["action_penalty"] > 0.0:
-            action_penalty = torch.mean(actions**2, dim=-1) * self.cfg["action_penalty"]
+            action_norm_sq = torch.mean(actions**2, dim=-1)
+            action_penalty = action_norm_sq * self.cfg["action_penalty"]
             rew -= action_penalty
-            rew_dict["action_penalty"] = action_penalty  
+            rew_dict["action_penalty"] = action_penalty
+            rew_dict["action_norm_sq"] = action_norm_sq
+
+        # Roll-up scalars for the wandb breakdown: the final total reward seen
+        # by the policy, plus each shaped component as a separate scalar so the
+        # dashboard can stack them and show what's actually driving updates.
+        # The pre-weight ("raw") versions are exposed above per-component.
+        rew_dict["total_rew"] = rew.detach().clone()
+        breakdown_pairs = (
+            ("task_rew", rew_dict.get("task_rew")),
+            ("imi_rew", rew_dict.get("imi_rew") if self.use_imi_rew else None),
+            ("con_rew", rew_dict.get("con_rew") if self.contact_rew_weight > 0.0 else None),
+            ("bc_rew", rew_dict.get("bc_rew") if self.bc_rew_weight > 0.0 else None),
+            ("action_penalty", rew_dict.get("action_penalty") if self.cfg["action_penalty"] > 0.0 else None),
+            ("force_penalty", rew_dict.get("force_penalty")),
+        )
+        for name, value in breakdown_pairs:
+            if value is None:
+                continue
+            sign = -1.0 if name.endswith("penalty") else 1.0
+            rew_dict[f"contribution/{name}"] = sign * value.detach()
         return rew, rew_dict
  
     def get_reward_keys(self):
