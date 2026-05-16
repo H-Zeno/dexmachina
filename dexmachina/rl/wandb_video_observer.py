@@ -69,14 +69,27 @@ class WandbVideoObserver(IsaacAlgoObserver):
         ts = time.strftime("%Y%m%d-%H%M%S")
         path = os.path.join(self._video_root, f"epoch{epoch_num:06d}_{ts}.mp4")
         self._base_env.export_video(path)
+
+        log_payload: dict = {
+            "video/epoch": epoch_num,
+            "video/frame": frame,
+        }
         if os.path.exists(path):
-            wandb.log(
-                {
-                    "video": wandb.Video(path, format="mp4"),
-                    "video/epoch": epoch_num,
-                    "video/frame": frame,
-                }
-            )
+            log_payload["video"] = wandb.Video(path, format="mp4")
             print(f"[WandbVideoObserver] uploaded {path} at epoch {epoch_num}")
         else:
-            print(f"[WandbVideoObserver] export_video did not produce {path}; skipping wandb upload")
+            print(f"[WandbVideoObserver] export_video did not produce {path}; skipping primary video upload")
+
+        # Auxiliary cameras (e.g. 'grid' macro view of ~100 envs). Each gets
+        # its own wandb panel under video/<cam_name> so the dashboard can
+        # show the front close-up and the parallel-env overview side by side.
+        aux_paths = self._base_env.export_aux_videos(path) if hasattr(self._base_env, "export_aux_videos") else {}
+        for cam_name, aux_path in aux_paths.items():
+            if os.path.exists(aux_path):
+                log_payload[f"video/{cam_name}"] = wandb.Video(aux_path, format="mp4")
+                print(f"[WandbVideoObserver] uploaded {aux_path} at epoch {epoch_num}")
+            else:
+                print(f"[WandbVideoObserver] export_aux_videos did not produce {aux_path}; skipping")
+
+        if len(log_payload) > 2:  # has at least one video besides the bookkeeping epoch/frame keys
+            wandb.log(log_payload)

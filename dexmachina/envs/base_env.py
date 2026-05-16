@@ -119,6 +119,17 @@ def get_env_cfg(
             lookat=(0.0, -0.15, 1.0),
             fov=25,
         ),
+        # Top-down macro view of ~100 parallel envs (a 10x10 patch of the
+        # 64x64 env grid, which Genesis centers at the world origin with
+        # env_spacing=(1.0, 1.0)). Resolution is square so the 55° FOV
+        # captures roughly 11m x 11m at height 11m above the action plane.
+        # Each env gets ~70x70 px which is enough to see hand + box motion.
+        grid=dict(
+            res=(720, 720),
+            pos=(0.0, 0.0, 12.0),
+            lookat=(0.0, 0.0, 1.0),
+            fov=55,
+        ),
     )
     env_cfg = {
         "num_envs": 1, 
@@ -342,10 +353,15 @@ class BaseEnv:
 
         self._recording = False
         self._recorded_frames = []
-        
+        # Parallel macro-view recording: when the 'grid' camera is configured,
+        # we render it every recording frame alongside the primary camera and
+        # ship a second mp4 to wandb per recording cycle. Per-camera buffers
+        # so WandbVideoObserver can upload each as its own video panel.
+        self._recorded_frames_by_camera: dict[str, list] = {}
+
         self._floating_camera = None
         if self.record_video:
-            assert gs.platform != 'macos', "Cannot render on macos"           
+            assert gs.platform != 'macos', "Cannot render on macos"
             self.render_camera = env_cfg.get('render_camera', 'front')
             self._add_camera(camera_kwargs=env_cfg['camera_kwargs'])
 
@@ -1045,6 +1061,9 @@ class BaseEnv:
 
     def start_recording(self):
         self._recorded_frames = []
+        # Also reset per-camera buffers used for the auxiliary grid view.
+        for name in self._recorded_frames_by_camera:
+            self._recorded_frames_by_camera[name] = []
         if self.record_video:
             self._recording = True
 
@@ -1056,17 +1075,27 @@ class BaseEnv:
             # apply is not durable across the training loop.
             self.apply_camera_poses()
         if self._recording and len(self._recorded_frames) < self.max_video_frames and self.record_video:
-            # obj_pos = self.objects[self.object_names[0]].root_pos.cpu().numpy()[-1] 
-            # import time
-            # start = time.time()
             frame, depth_arr, seg_arr, normal_arr = self._floating_camera.render(segmentation=self.render_segmentation)
-            if self.render_segmentation: 
+            if self.render_segmentation:
                 frame = np.concatenate(
-                    [frame, seg_arr[:,:,None]], axis=-1
+                    [frame, seg_arr[:, :, None]], axis=-1
                 )
-            # end = time.time()
-            # print(end-start)
             self._recorded_frames.append(frame)
+
+            # Auxiliary cameras (e.g. 'grid' macro view) — render every camera
+            # that exists alongside the primary so wandb can show multiple
+            # synchronized angles per recording cycle. Skipping the primary
+            # camera since it's already captured into _recorded_frames above.
+            for cam_name, cam in self.cameras.items():
+                if cam is self._floating_camera or cam is None:
+                    continue
+                if cam_name not in self._recorded_frames_by_camera:
+                    self._recorded_frames_by_camera[cam_name] = []
+                buf = self._recorded_frames_by_camera[cam_name]
+                if len(buf) >= self.max_video_frames:
+                    continue
+                aux_frame, _, _, _ = cam.render(segmentation=False)
+                buf.append(aux_frame)
 
     def get_recorded_frames(self, wait_for_max=True): 
         """ Stops recording if frames were yielded """
@@ -1081,26 +1110,51 @@ class BaseEnv:
     
     def export_video(self, path, wait_for_max=True):
         if len(self._recorded_frames) == 0:
-            return 
+            return
         frames = self.get_recorded_frames(wait_for_max=wait_for_max)
         if frames is not None:
             rgb_frames = [frame[:,:,:3] for frame in frames]
             if frames[0].shape[-1] == 4: # fill background with white
                 mask_frames = [frame[:,:,3:] for frame in frames]
-                # use mask frames to fill in white background 
+                # use mask frames to fill in white background
                 rgb_frames = np.array(rgb_frames)
                 mask_frames = np.array(mask_frames)
-                mask_frames = np.repeat(mask_frames, 3, axis=-1) 
+                mask_frames = np.repeat(mask_frames, 3, axis=-1)
                 # max_id = mask_frames.max()
                 ground_id = self.ground.idx
                 rgb_frames[mask_frames == ground_id] = 255
-                rgb_frames = np.clip(rgb_frames, 0, 255).astype(np.uint8)                 
+                rgb_frames = np.clip(rgb_frames, 0, 255).astype(np.uint8)
                 rgb_frames = [rgb_frames[i] for i in range(len(rgb_frames))]
             path = path + ".mp4" if not path.endswith(".mp4") else path
-            from moviepy.editor import ImageSequenceClip 
+            from moviepy.editor import ImageSequenceClip
             clip = ImageSequenceClip(rgb_frames, fps=int(1/self.dt/2))
-            clip.write_videofile(path) 
+            clip.write_videofile(path)
         return frames
+
+    def export_aux_videos(self, base_path: str) -> dict[str, str]:
+        """Write one mp4 per auxiliary camera (everything in self.cameras that
+        isn't the primary self._floating_camera). Returns ``{cam_name: path}``
+        for the cameras that produced a file. Used by WandbVideoObserver to
+        upload the grid macro view alongside the primary front view.
+
+        ``base_path`` is the primary mp4 path; auxiliary mp4s land next to it
+        with ``_<cam_name>`` inserted before the extension.
+        """
+        out: dict[str, str] = {}
+        if not self._recorded_frames_by_camera:
+            return out
+        base_no_ext = base_path[:-4] if base_path.endswith(".mp4") else base_path
+        for cam_name, buf in list(self._recorded_frames_by_camera.items()):
+            if not buf:
+                continue
+            cam_path = f"{base_no_ext}_{cam_name}.mp4"
+            rgb_frames = [frame[:, :, :3] for frame in buf]
+            from moviepy.editor import ImageSequenceClip
+            clip = ImageSequenceClip(rgb_frames, fps=int(1 / self.dt / 2))
+            clip.write_videofile(cam_path)
+            out[cam_name] = cam_path
+            self._recorded_frames_by_camera[cam_name] = []
+        return out
     
     def randomize(self, env_idxs=None):
         if not self.rand_cfg.get('randomize', False):
